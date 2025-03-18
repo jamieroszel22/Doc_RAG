@@ -24,6 +24,25 @@ A comprehensive Retrieval-Augmented Generation (RAG) system for IBM Redbooks doc
 
 ### 1. Initial Setup
 
+Before using the system, you'll need to create two important directories that aren't included in the repository:
+
+1. Create a `pdfs` directory in the project root:
+   ```bash
+   mkdir pdfs
+   ```
+   This is where you'll place your IBM Redbooks PDFs for processing.
+
+2. The system will automatically create a `processed_redbooks` directory when needed:
+   ```
+   processed_redbooks/
+   ├── docs/          # Extracted text
+   ├── chunks/        # Processed chunks
+   ├── ollama/        # Ollama RAG files
+   └── openwebui/     # Open WebUI collection
+   ```
+
+These directories are excluded from version control as they contain user-specific content.
+
 a. **Environment Setup**:
    ```bash
    # Make scripts executable
@@ -189,6 +208,21 @@ For a guided interface to all functions:
 ```bash
 ./menu.sh
 ```
+
+### Streamlit GUI
+For a modern web-based GUI interface:
+```bash
+./run_streamlit.sh
+```
+
+The Streamlit interface provides:
+- PDF upload and management
+- Visual processing status and logs
+- Simple search interface
+- Collection management
+- System status dashboard
+
+![Streamlit GUI](streamlit_screenshot.png)
 
 ## Troubleshooting
 
