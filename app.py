@@ -19,8 +19,9 @@ from datetime import datetime
 import threading
 import queue
 
-# Initialize paths
-BASE_DIR = Path('/Users/jamieroszel/Desktop/Docling RAG')
+# Initialize paths - using relative paths for portability
+current_dir = Path(__file__).parent.absolute()
+BASE_DIR = current_dir
 PDFS_DIR = BASE_DIR / 'pdfs'
 PROCESSED_DIR = BASE_DIR / 'processed_docs'  # Changed from processed_redbooks
 CHUNKS_DIR = PROCESSED_DIR / 'chunks'
@@ -56,6 +57,8 @@ if 'current_tab' not in st.session_state:
     st.session_state.current_tab = 0
 if 'is_processing' not in st.session_state:
     st.session_state.is_processing = False
+if 'process_queue' not in st.session_state:
+    st.session_state.process_queue = None
 
 # Reset processing status if it's stuck (processing status is PROCESSING but is_processing is False)
 if st.session_state.processing_status == "PROCESSING" and not st.session_state.is_processing:

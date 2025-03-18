@@ -21,17 +21,16 @@ DocRAG is a comprehensive document processing system with RAG (Retrieval-Augment
 
 ### Prerequisites
 
-- Python 3.12 or higher
-- Streamlit 1.27+
-- PyPDF2
-- Pandas, Plotly
+- Python 3.8 or higher (Python 3.12 recommended)
+- pip (Python package manager)
+- Git (for cloning the repository)
 
 ### Installation
 
 1. Clone this repository:
    ```bash
-   git clone https://github.com/yourusername/docrag.git
-   cd docrag
+   git clone https://github.com/jamieroszel22/Redbooks_RAG.git
+   cd Redbooks_RAG
    ```
 
 2. Install dependencies:
@@ -39,12 +38,31 @@ DocRAG is a comprehensive document processing system with RAG (Retrieval-Augment
    pip install -r requirements.txt
    ```
 
-3. Run the application:
+3. Prepare the directory structure (the app will create these automatically, but you can do it manually):
    ```bash
-   ./run_streamlit.sh
+   mkdir -p pdfs processed_docs/docs processed_docs/chunks processed_docs/ollama processed_docs/openwebui
    ```
 
-4. Open your browser at [http://localhost:8501](http://localhost:8501)
+4. Make the shell scripts executable:
+   ```bash
+   # Linux/macOS
+   chmod +x *.sh
+
+   # Windows (using Git Bash or WSL)
+   chmod +x *.sh
+   # or create .bat files calling the Python scripts directly
+   ```
+
+5. Run the application:
+   ```bash
+   # Linux/macOS
+   ./run_streamlit.sh
+
+   # Windows (direct Python)
+   python -m streamlit run app.py
+   ```
+
+6. Open your browser at [http://localhost:8501](http://localhost:8501)
 
 ## Usage
 
@@ -73,6 +91,13 @@ DocRAG is a comprehensive document processing system with RAG (Retrieval-Augment
 2. Open WebUI at http://localhost:3000
 3. Go to Collections > Import Collection
 4. Select the JSON file from `processed_docs/openwebui/knowledge_collection.json`
+
+## Troubleshooting
+
+- **Path Issues**: The app uses relative paths, so always run it from the root directory.
+- **Permissions**: If shell scripts don't run, check the execution permissions (`chmod +x *.sh`)
+- **Python Version**: Make sure you have Python 3.8+ installed (`python --version` or `python3 --version`)
+- **Streamlit Port**: Default port is 8501. If it's in use, edit `run_streamlit.sh` to change `STREAMLIT_SERVER_PORT`
 
 ## Architecture
 

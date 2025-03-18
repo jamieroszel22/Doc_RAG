@@ -3,8 +3,9 @@
 
 echo "Processing Redbooks PDFs with Docling..."
 
-# Base directory
-BASE_DIR="/Users/jamieroszel/Desktop/Docling RAG"
+# Base directory - use relative paths for portability
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+BASE_DIR="$SCRIPT_DIR"
 SCRIPTS_DIR="$BASE_DIR/scripts"
 PDFS_DIR="$BASE_DIR/pdfs"
 PROCESSED_DIR="$BASE_DIR/processed_redbooks"

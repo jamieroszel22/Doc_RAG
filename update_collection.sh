@@ -5,8 +5,9 @@
 
 echo "Checking for new IBM Z content..."
 
-# Base directory
-BASE_DIR="/Users/jamieroszel/Desktop/Docling RAG"
+# Base directory - use relative paths for portability
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+BASE_DIR="$SCRIPT_DIR"
 PDFS_DIR="$BASE_DIR/pdfs"
 PROCESSED_DIR="$BASE_DIR/processed_redbooks"
 CHUNKS_DIR="$PROCESSED_DIR/chunks"

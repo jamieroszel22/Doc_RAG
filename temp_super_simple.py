@@ -17,9 +17,10 @@ def process_pdfs():
         os.system(f"{sys.executable} -m pip install PyPDF2")
         import PyPDF2
 
-    # Paths
-    pdfs_dir = Path("/Users/jamieroszel/Desktop/Docling RAG/pdfs")
-    output_dir = Path("/Users/jamieroszel/Desktop/Docling RAG/processed_redbooks")
+    # Use relative paths for portability
+    script_dir = Path(__file__).parent.absolute()
+    pdfs_dir = script_dir / 'pdfs'
+    output_dir = script_dir / 'processed_redbooks'
     docs_dir = output_dir / "docs"
     chunks_dir = output_dir / "chunks"
     ollama_dir = output_dir / "ollama"

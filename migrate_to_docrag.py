@@ -12,7 +12,9 @@ from pathlib import Path
 
 def migrate_data():
     """Migrate data from old structure to new DocRAG structure"""
-    base_dir = Path("/Users/jamieroszel/Desktop/Docling RAG")
+    # Use relative paths for portability
+    script_dir = Path(__file__).parent.absolute()
+    base_dir = script_dir
     old_dir = base_dir / "processed_redbooks"
     new_dir = base_dir / "processed_docs"
 
