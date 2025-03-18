@@ -16,7 +16,7 @@ This document provides a detailed breakdown of the entire technical stack behind
 
 ### Document Processing
 - **PyPDF2**: PDF parsing and text extraction
-- **Custom chunking logic**: Text segmentation for RAG processing
+- **Custom chunking logic**: Simple character-based text segmentation for RAG processing
 - **Markdown generator**: Custom functionality to convert text to structured Markdown
 
 ## Data Management
@@ -37,7 +37,7 @@ This document provides a detailed breakdown of the entire technical stack behind
 1. **Upload**: PDF documents stored in `/pdfs`
 2. **Processing**: Text extraction via PyPDF2
 3. **Structuring**: Creation of individual document folders with metadata
-4. **Chunking**: Text segmentation for RAG operations
+4. **Chunking**: Basic text segmentation (1000 chars with 100 char overlap)
 5. **Collection**: Assembly of multiple documents into searchable collections
 
 ### Integrations
@@ -49,17 +49,16 @@ This document provides a detailed breakdown of the entire technical stack behind
 ## Dependencies & Libraries
 
 ### Core Dependencies
-- **docling**: Document processing framework
-- **PyPDF2**: PDF handling
+- **PyPDF2**: PDF text extraction
 - **pandas**: Data manipulation for UI tables
 - **streamlit**: Web application framework
 - **plotly**: Visualization library
 
-### Advanced Features
-- **transformers**: NLP model integration
-- **torch/torchvision**: Machine learning framework
-- **easyocr**: OCR capabilities (for image-based PDFs)
-- **safetensors**: Tensor handling
+### Additional Libraries
+- **numpy/scipy**: Scientific computing
+- **pydantic**: Data validation
+- **huggingface_hub**: Model hosting
+- **torch**: Machine learning framework (optional)
 
 ## System Architecture
 
@@ -105,4 +104,4 @@ This document provides a detailed breakdown of the entire technical stack behind
 - Graceful process termination and cleanup
 - Backwards compatibility with existing data structure
 
-The system was designed with modularity in mind, allowing for the successful rebranding from "IBM Redbooks RAG System" to the more generic "DocRAG" without major architectural changes. The migration script ensures backward compatibility with existing data.
+The system was designed with simplicity and modularity in mind, using standard Python libraries and straightforward text processing techniques. The successful rebranding from "IBM Redbooks RAG System" to the more generic "DocRAG" demonstrates the system's flexibility.
