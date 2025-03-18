@@ -15,9 +15,9 @@ import subprocess
 import tempfile
 import shutil
 import sys
+from datetime import datetime
 import threading
 import queue
-from datetime import datetime
 
 # Initialize paths
 BASE_DIR = Path('/Users/jamieroszel/Desktop/Docling RAG')
@@ -31,19 +31,29 @@ SCRIPTS_DIR = BASE_DIR / 'scripts'
 PDFS_DIR.mkdir(exist_ok=True)
 PROCESSED_DIR.mkdir(exist_ok=True)
 
-# Create a queue for thread-safe communication
-if 'process_queue' not in st.session_state:
-    st.session_state.process_queue = queue.Queue()
+# Set page config at the very beginning
+st.set_page_config(
+    page_title="IBM Redbooks RAG System",
+    page_icon="📚",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# Initialize session state variables - always initialize at the beginning
+# Global message queue (outside of session state)
+# This is a workaround for thread communication
+global_message_queue = queue.Queue()
+
+# Initialize session state variables
 if 'processing_status' not in st.session_state:
     st.session_state.processing_status = None
 if 'processing_log' not in st.session_state:
     st.session_state.processing_log = []
 if 'search_results' not in st.session_state:
     st.session_state.search_results = None
-if 'thread_running' not in st.session_state:
-    st.session_state.thread_running = False
+if 'last_check_time' not in st.session_state:
+    st.session_state.last_check_time = time.time()
+if 'current_page' not in st.session_state:
+    st.session_state.current_page = "Upload & Process"
 
 # Custom CSS for better appearance
 st.markdown("""
@@ -51,9 +61,10 @@ st.markdown("""
     .main {
         background-color: #f5f7f9;
     }
-    .stApp {
+    .block-container {
         max-width: 1200px;
         margin: 0 auto;
+        padding-top: 2rem;
     }
     .file-uploader {
         border: 2px dashed #0e77ca;
@@ -81,21 +92,34 @@ st.markdown("""
         max-height: 300px;
         overflow-y: auto;
     }
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 24px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        background-color: #f5f7f9;
+        border-radius: 4px 4px 0 0;
+        gap: 1px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #ffffff;
+        border-radius: 4px 4px 0 0;
+        border-right: 1px solid #f0f2f6;
+        border-left: 1px solid #f0f2f6;
+        border-top: 2px solid #4da6ff;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# Function to add log messages from the thread to the queue
-def add_log_message(message):
-    if st.session_state.process_queue is not None:
-        st.session_state.process_queue.put(message)
-
 # Helper function to run super_simple.py in a thread
-def process_pdfs(force=False, skip_openwebui=False):
+def process_pdfs_in_thread(force=False, skip_openwebui=False):
     """Run the PDF processing script in a background thread"""
     # Update the status first
     st.session_state.processing_status = "PROCESSING"
     st.session_state.processing_log = []
-    st.session_state.thread_running = True
 
     def run_process():
         try:
@@ -116,30 +140,27 @@ def process_pdfs(force=False, skip_openwebui=False):
             # Capture output line by line
             for line in iter(process.stdout.readline, ''):
                 if line.strip():
-                    add_log_message(line.strip())
+                    global_message_queue.put(("LOG", line.strip()))
 
             # Check for any errors
             for line in iter(process.stderr.readline, ''):
                 if line.strip():
-                    add_log_message(f"ERROR: {line.strip()}")
+                    global_message_queue.put(("LOG", f"ERROR: {line.strip()}"))
 
             process.stdout.close()
             process.stderr.close()
             return_code = process.wait()
 
             if return_code == 0:
-                add_log_message("✅ Processing completed successfully!")
-                add_log_message("STATUS:COMPLETE")
+                global_message_queue.put(("LOG", "✅ Processing completed successfully!"))
+                global_message_queue.put(("STATUS", "COMPLETE"))
             else:
-                add_log_message(f"❌ Processing failed with code {return_code}")
-                add_log_message("STATUS:ERROR")
+                global_message_queue.put(("LOG", f"❌ Processing failed with code {return_code}"))
+                global_message_queue.put(("STATUS", "ERROR"))
 
         except Exception as e:
-            add_log_message(f"❌ Error: {str(e)}")
-            add_log_message("STATUS:ERROR")
-
-        # Mark thread as complete
-        add_log_message("THREAD:COMPLETE")
+            global_message_queue.put(("LOG", f"❌ Error: {str(e)}"))
+            global_message_queue.put(("STATUS", "ERROR"))
 
     # Start processing thread
     thread = threading.Thread(target=run_process)
@@ -147,22 +168,17 @@ def process_pdfs(force=False, skip_openwebui=False):
     thread.start()
 
 # Helper function to check queue and update session state
-def check_process_queue():
-    # Check for any messages in the queue
-    if hasattr(st.session_state, 'process_queue'):
-        q = st.session_state.process_queue
-        while not q.empty():
-            message = q.get()
-
-            # Check for special status messages
-            if message.startswith("STATUS:"):
-                st.session_state.processing_status = message[7:]
-            elif message.startswith("THREAD:"):
-                if message == "THREAD:COMPLETE":
-                    st.session_state.thread_running = False
-            else:
-                # Regular log message
+def check_message_queue():
+    """Check the global message queue and update session state"""
+    while not global_message_queue.empty():
+        try:
+            message_type, message = global_message_queue.get_nowait()
+            if message_type == "LOG":
                 st.session_state.processing_log.append(message)
+            elif message_type == "STATUS":
+                st.session_state.processing_status = message
+        except queue.Empty:
+            break
 
 # Helper function to run simple search
 def run_simple_search(query):
@@ -201,28 +217,6 @@ def run_simple_search(query):
 
     except Exception as e:
         return f"Search error: {str(e)}"
-
-# Main app layout
-def main():
-    # Check process queue for updates
-    check_process_queue()
-
-    st.title("IBM Redbooks RAG System")
-    st.write("A comprehensive Retrieval-Augmented Generation system for IBM Redbooks documentation")
-
-    # Sidebar navigation
-    st.sidebar.title("Navigation")
-    page = st.sidebar.radio("Go to", ["Upload & Process", "Search", "Collections", "Status"])
-
-    # Page content
-    if page == "Upload & Process":
-        render_upload_page()
-    elif page == "Search":
-        render_search_page()
-    elif page == "Collections":
-        render_collections_page()
-    elif page == "Status":
-        render_status_page()
 
 # Upload and Process page
 def render_upload_page():
@@ -288,14 +282,16 @@ def render_upload_page():
             skip_openwebui = st.checkbox("Skip Open WebUI collection",
                                         help="Don't prepare Open WebUI collection")
 
-        process_button = st.button("Process PDFs", type="primary", disabled=st.session_state.thread_running)
+        # Check if processing is active
+        is_processing = st.session_state.processing_status == "PROCESSING"
+
+        process_button = st.button("Process PDFs", type="primary", disabled=is_processing)
         if process_button:
-            process_pdfs(force=force_reprocess, skip_openwebui=skip_openwebui)
-            st.info("⏳ Processing started. Check the Status page for progress.")
-            # Add a delay to ensure the thread starts
-            time.sleep(1)
-            # Redirect to status page
-            st.switch_page("app.py/Status")
+            process_pdfs_in_thread(force=force_reprocess, skip_openwebui=skip_openwebui)
+            st.info("⏳ Processing started. View status below.")
+            # Change to the status tab within this page (no redirect)
+            st.session_state.current_page = "Status"
+            st.experimental_rerun()
     else:
         st.info("No PDFs found. Please upload PDFs first.")
 
@@ -391,14 +387,13 @@ def render_collections_page():
 
             # Update collection button
             st.divider()
-            update_button = st.button("Update Collection", type="primary", disabled=st.session_state.thread_running)
+            is_processing = st.session_state.processing_status == "PROCESSING"
+            update_button = st.button("Update Collection", type="primary", disabled=is_processing)
             if update_button:
-                process_pdfs(force=False, skip_openwebui=False)
+                process_pdfs_in_thread(force=False, skip_openwebui=False)
                 st.info("⏳ Collection update started. Check the Status page for progress.")
-                # Add a delay to ensure the thread starts
-                time.sleep(1)
-                # Navigate to the status page
-                st.switch_page("app.py/Status")
+                st.session_state.current_page = "Status"
+                st.experimental_rerun()
 
         except Exception as e:
             st.error(f"Error loading collection: {str(e)}")
@@ -429,12 +424,6 @@ def render_status_page():
         st.markdown("</div>", unsafe_allow_html=True)
     else:
         st.text("No log entries")
-
-    # Auto-refresh if processing is happening
-    if st.session_state.thread_running:
-        st.empty()
-        time.sleep(1)
-        st.rerun()
 
     # System information
     st.divider()
@@ -474,7 +463,42 @@ def render_status_page():
     st.divider()
     refresh_button = st.button("Refresh Status")
     if refresh_button:
-        st.rerun()
+        st.experimental_rerun()
+
+# Main app layout
+def main():
+    # Check the global message queue for updates
+    check_message_queue()
+
+    st.title("IBM Redbooks RAG System")
+    st.write("A comprehensive Retrieval-Augmented Generation system for IBM Redbooks documentation")
+
+    # If processing is active, periodically check for updates
+    if st.session_state.processing_status == "PROCESSING":
+        current_time = time.time()
+        if current_time - st.session_state.last_check_time > 1.0:
+            st.session_state.last_check_time = current_time
+            st.experimental_rerun()
+
+    # Create tabs for each section
+    tab1, tab2, tab3, tab4 = st.tabs(["Upload & Process", "Search", "Collections", "Status"])
+
+    # Display content in selected tab
+    with tab1:
+        if st.session_state.current_page == "Upload & Process" or tab1.active:
+            render_upload_page()
+
+    with tab2:
+        if st.session_state.current_page == "Search" or tab2.active:
+            render_search_page()
+
+    with tab3:
+        if st.session_state.current_page == "Collections" or tab3.active:
+            render_collections_page()
+
+    with tab4:
+        if st.session_state.current_page == "Status" or tab4.active:
+            render_status_page()
 
 # Run the app
 if __name__ == "__main__":
