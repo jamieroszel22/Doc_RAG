@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-IBM Redbooks RAG System - Streamlit App
-A GUI interface for processing IBM Redbooks PDFs and managing RAG collections
+DocRAG - A GUI for processing PDF documents using RAG
+A GUI interface for processing PDF documents and managing RAG collections
 """
 
 import os
@@ -22,7 +22,7 @@ import queue
 # Initialize paths
 BASE_DIR = Path('/Users/jamieroszel/Desktop/Docling RAG')
 PDFS_DIR = BASE_DIR / 'pdfs'
-PROCESSED_DIR = BASE_DIR / 'processed_redbooks'
+PROCESSED_DIR = BASE_DIR / 'processed_docs'  # Changed from processed_redbooks
 CHUNKS_DIR = PROCESSED_DIR / 'chunks'
 OPENWEBUI_DIR = PROCESSED_DIR / 'openwebui'
 SCRIPTS_DIR = BASE_DIR / 'scripts'
@@ -33,7 +33,7 @@ PROCESSED_DIR.mkdir(exist_ok=True)
 
 # Set page config at the very beginning
 st.set_page_config(
-    page_title="IBM Redbooks RAG System",
+    page_title="DocRAG",
     page_icon="📚",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -52,8 +52,15 @@ if 'search_results' not in st.session_state:
     st.session_state.search_results = None
 if 'last_check_time' not in st.session_state:
     st.session_state.last_check_time = time.time()
-if 'current_page' not in st.session_state:
-    st.session_state.current_page = "Upload & Process"
+if 'current_tab' not in st.session_state:
+    st.session_state.current_tab = 0
+if 'is_processing' not in st.session_state:
+    st.session_state.is_processing = False
+
+# Reset processing status if it's stuck (processing status is PROCESSING but is_processing is False)
+if st.session_state.processing_status == "PROCESSING" and not st.session_state.is_processing:
+    st.session_state.processing_status = None
+    st.session_state.processing_log.append("⚠️ Detected stale processing status - automatically reset")
 
 # Custom CSS for better appearance
 st.markdown("""
@@ -120,6 +127,7 @@ def process_pdfs_in_thread(force=False, skip_openwebui=False):
     # Update the status first
     st.session_state.processing_status = "PROCESSING"
     st.session_state.processing_log = []
+    st.session_state.is_processing = True
 
     def run_process():
         try:
@@ -161,6 +169,9 @@ def process_pdfs_in_thread(force=False, skip_openwebui=False):
         except Exception as e:
             global_message_queue.put(("LOG", f"❌ Error: {str(e)}"))
             global_message_queue.put(("STATUS", "ERROR"))
+        finally:
+            # Make sure to set processing to False when done
+            global_message_queue.put(("PROCESSING", False))
 
     # Start processing thread
     thread = threading.Thread(target=run_process)
@@ -170,15 +181,39 @@ def process_pdfs_in_thread(force=False, skip_openwebui=False):
 # Helper function to check queue and update session state
 def check_message_queue():
     """Check the global message queue and update session state"""
-    while not global_message_queue.empty():
-        try:
-            message_type, message = global_message_queue.get_nowait()
-            if message_type == "LOG":
-                st.session_state.processing_log.append(message)
-            elif message_type == "STATUS":
-                st.session_state.processing_status = message
-        except queue.Empty:
-            break
+    try:
+        # Process up to 100 messages per check to avoid infinite loops
+        max_messages = 100
+        msg_count = 0
+
+        while not global_message_queue.empty() and msg_count < max_messages:
+            try:
+                message_type, message = global_message_queue.get_nowait()
+                msg_count += 1
+
+                if message_type == "LOG":
+                    st.session_state.processing_log.append(message)
+                elif message_type == "STATUS":
+                    st.session_state.processing_status = message
+                    # If status is COMPLETE or ERROR, also update is_processing
+                    if message in ["COMPLETE", "ERROR"]:
+                        st.session_state.is_processing = False
+                elif message_type == "PROCESSING":
+                    st.session_state.is_processing = message
+                else:
+                    # Log unrecognized message types for debugging
+                    st.session_state.processing_log.append(f"WARNING: Unknown message type: {message_type}")
+            except queue.Empty:
+                break
+            except Exception as e:
+                st.session_state.processing_log.append(f"ERROR: Failed to process message: {str(e)}")
+    except Exception as e:
+        # Add critical error to session state
+        if 'processing_log' in st.session_state:
+            st.session_state.processing_log.append(f"CRITICAL ERROR: {str(e)}")
+        # Reset processing state on critical error
+        st.session_state.is_processing = False
+        st.session_state.processing_status = "ERROR"
 
 # Helper function to run simple search
 def run_simple_search(query):
@@ -223,13 +258,13 @@ def render_upload_page():
     st.header("Upload & Process PDFs")
 
     # Upload section
-    st.subheader("1. Upload IBM Redbooks PDFs")
+    st.subheader("1. Upload PDF Documents")
 
     uploaded_files = st.file_uploader(
-        "Upload IBM Redbooks PDFs",
+        "Upload PDF Documents",
         type=["pdf"],
         accept_multiple_files=True,
-        help="Select one or more IBM Redbooks PDF files to upload"
+        help="Select one or more PDF files to upload"
     )
 
     if uploaded_files:
@@ -261,12 +296,27 @@ def render_upload_page():
         for pdf in pdfs:
             size_mb = pdf.stat().st_size / (1024 * 1024)
             mod_time = datetime.fromtimestamp(pdf.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
-            processed = (PROCESSED_DIR / "docs" / f"{pdf.stem}.txt").exists()
+
+            # Check if processed in new folder structure
+            individual_folder = (PROCESSED_DIR / "docs" / pdf.stem)
+            if individual_folder.exists() and (individual_folder / f"{pdf.stem}.txt").exists():
+                processed = True
+                has_json = (individual_folder / f"{pdf.stem}.json").exists()
+                has_md = (individual_folder / f"{pdf.stem}.md").exists()
+            else:
+                # Fallback to old structure for compatibility
+                processed = (PROCESSED_DIR / "docs" / f"{pdf.stem}.txt").exists()
+                has_json = False
+                has_md = False
+
             pdf_data.append({
                 "Filename": pdf.name,
                 "Size (MB)": round(size_mb, 2),
                 "Modified": mod_time,
-                "Processed": "✅" if processed else "❌"
+                "Processed": "✅" if processed else "❌",
+                "Individual Folder": "✅" if individual_folder.exists() else "❌",
+                "Has JSON": "✅" if has_json else "❌",
+                "Has Markdown": "✅" if has_md else "❌"
             })
 
         df = pd.DataFrame(pdf_data)
@@ -283,24 +333,26 @@ def render_upload_page():
                                         help="Don't prepare Open WebUI collection")
 
         # Check if processing is active
-        is_processing = st.session_state.processing_status == "PROCESSING"
+        is_processing = st.session_state.is_processing
 
         process_button = st.button("Process PDFs", type="primary", disabled=is_processing)
         if process_button:
             process_pdfs_in_thread(force=force_reprocess, skip_openwebui=skip_openwebui)
-            st.info("⏳ Processing started. View status below.")
-            # Change to the status tab within this page (no redirect)
-            st.session_state.current_page = "Status"
-            st.experimental_rerun()
+            st.info("⏳ Processing started. Please check the Status tab for progress.")
     else:
         st.info("No PDFs found. Please upload PDFs first.")
 
 # Search page
 def render_search_page():
-    st.header("Search IBM Redbooks")
+    st.header("Search Documents")
+
+    # Add debug information at the top
+    st.info("Debug info: Checking if chunks exist...")
 
     # Check if chunks exist
     chunk_files = list(CHUNKS_DIR.glob("*_chunks.json"))
+    st.write(f"Found {len(chunk_files)} chunk files: {[f.name for f in chunk_files]}")
+
     if not chunk_files:
         st.warning("No processed content found. Please process PDFs first.")
         return
@@ -312,6 +364,7 @@ def render_search_page():
 
     if search_button and query:
         with st.spinner("Searching..."):
+            st.write(f"Searching for: '{query}'")
             results = run_simple_search(query)
             st.session_state.search_results = results
 
@@ -319,9 +372,12 @@ def render_search_page():
     if st.session_state.search_results:
         st.subheader("Search Results")
 
+        st.write(f"Result type: {type(st.session_state.search_results)}")
+
         if isinstance(st.session_state.search_results, str):
             st.info(st.session_state.search_results)
         else:
+            st.write(f"Found {len(st.session_state.search_results)} results")
             for i, result in enumerate(st.session_state.search_results):
                 with st.expander(f"Result {i+1} (Source: {result['source']})"):
                     st.markdown(f"**Score:** {result['score']}")
@@ -334,7 +390,7 @@ def render_search_page():
     st.markdown("""
     - **Open WebUI**: Powerful RAG interface with collection management
         - Open [http://localhost:3000/](http://localhost:3000/) to use Open WebUI
-        - Import collections from `processed_redbooks/openwebui/`
+        - Import collections from `processed_docs/openwebui/`
 
     - **Ollama RAG**: Local AI-powered question answering
         - Run `./run_rag_interactive.sh` in terminal
@@ -345,12 +401,19 @@ def render_search_page():
 def render_collections_page():
     st.header("Collection Management")
 
+    # Add debug information
+    st.info("Debug info: Checking OpenWebUI collection...")
+
     # Open WebUI Collections
     st.subheader("Open WebUI Collections")
 
-    openwebui_file = OPENWEBUI_DIR / "ibm_knowledge_collection.json"
+    openwebui_file = OPENWEBUI_DIR / "knowledge_collection.json"  # Changed from ibm_knowledge_collection.json
+    st.write(f"Looking for collection file: {openwebui_file}")
+    st.write(f"File exists: {openwebui_file.exists()}")
+
     if openwebui_file.exists():
         try:
+            st.write("Attempting to load collection file...")
             with open(openwebui_file, "r", encoding="utf-8") as f:
                 collection = json.load(f)
 
@@ -387,18 +450,107 @@ def render_collections_page():
 
             # Update collection button
             st.divider()
-            is_processing = st.session_state.processing_status == "PROCESSING"
+            is_processing = st.session_state.is_processing
             update_button = st.button("Update Collection", type="primary", disabled=is_processing)
             if update_button:
                 process_pdfs_in_thread(force=False, skip_openwebui=False)
-                st.info("⏳ Collection update started. Check the Status page for progress.")
-                st.session_state.current_page = "Status"
-                st.experimental_rerun()
+                st.info("⏳ Collection update started. Please check the Status tab for progress.")
 
         except Exception as e:
             st.error(f"Error loading collection: {str(e)}")
+            st.exception(e)  # This will show the full exception traceback
     else:
         st.warning("No Open WebUI collection found. Please process PDFs first.")
+
+    # Individual Document Collections
+    st.divider()
+    st.subheader("Individual Document Collections")
+
+    # Find all document folders
+    doc_folders = list((PROCESSED_DIR / "docs").glob("*/"))
+
+    if doc_folders:
+        # Get data about individual JSON files
+        individual_docs = []
+        for folder in doc_folders:
+            doc_name = folder.name
+            json_file = folder / f"{doc_name}.json"
+            txt_file = folder / f"{doc_name}.txt"
+            md_file = folder / f"{doc_name}.md"
+
+            if json_file.exists() and txt_file.exists():
+                try:
+                    with open(json_file, "r", encoding="utf-8") as f:
+                        doc_data = json.load(f)
+
+                    individual_docs.append({
+                        "Title": doc_data.get("title", doc_name),
+                        "Pages": doc_data.get("pages", "Unknown"),
+                        "Chunks": doc_data.get("chunks_count", 0),
+                        "Folder": str(folder),
+                        "JSON": str(json_file),
+                        "TXT": str(txt_file),
+                        "MD": str(md_file) if md_file.exists() else "Not available",
+                        "Has MD": "✅" if md_file.exists() else "❌",
+                        "Date": doc_data.get("processed_date", "Unknown")
+                    })
+                except Exception as e:
+                    st.error(f"Error loading {json_file}: {str(e)}")
+
+        if individual_docs:
+            st.markdown(f"Found {len(individual_docs)} individual document collections")
+            df = pd.DataFrame(individual_docs)
+            st.dataframe(df, use_container_width=True)
+
+            # Add a section to view markdown files
+            st.subheader("View Markdown Files")
+
+            # Create a selectbox with document titles
+            doc_titles = [doc["Title"] for doc in individual_docs if doc["Has MD"] == "✅"]
+
+            if doc_titles:
+                selected_doc = st.selectbox("Select a document to view", doc_titles)
+
+                # Find the selected document
+                selected_md_path = None
+                for doc in individual_docs:
+                    if doc["Title"] == selected_doc and doc["Has MD"] == "✅":
+                        selected_md_path = Path(doc["MD"])
+                        break
+
+                if selected_md_path and selected_md_path.exists():
+                    with open(selected_md_path, "r") as f:
+                        md_content = f.read()
+
+                    # Display the markdown content
+                    st.markdown(md_content)
+
+                    # Add a download button for the markdown file
+                    st.download_button(
+                        label="Download Markdown File",
+                        data=md_content,
+                        file_name=f"{selected_doc}.md",
+                        mime="text/markdown"
+                    )
+            else:
+                st.info("No Markdown files available. Process PDFs with the updated script to create them.")
+
+            # Instructions for individual document import
+            st.subheader("Individual Document Import")
+            st.markdown("""
+            You can import individual documents to Open WebUI:
+
+            1. Open [Open WebUI](http://localhost:3000/)
+            2. Go to Collections > Your Collection > Import Document
+            3. Browse to the specific document JSON file in its folder
+            4. Import the document
+
+            This allows you to selectively add documents to collections.
+            """)
+        else:
+            st.info("No individual document collections found with the new format.")
+    else:
+        st.info("No individual document folders found. Process PDFs with the updated script to create them.")
 
 # Status page
 def render_status_page():
@@ -408,12 +560,30 @@ def render_status_page():
     if st.session_state.processing_status == "PROCESSING":
         st.markdown("<p class='status-processing'>⏳ Processing in progress...</p>", unsafe_allow_html=True)
         st.progress(0.5)  # Indeterminate progress
+
+        # Add more prominent reset button directly under the progress bar when processing
+        reset_button = st.button("⚠️ Reset Status (If Stuck)", type="primary")
+        if reset_button:
+            st.session_state.processing_status = None
+            st.session_state.is_processing = False
+            st.session_state.processing_log = []
+            st.rerun()
+        st.info("If the progress bar is stuck and no processing is happening, use the Reset button above.")
     elif st.session_state.processing_status == "COMPLETE":
         st.markdown("<p class='status-success'>✅ Processing complete</p>", unsafe_allow_html=True)
     elif st.session_state.processing_status == "ERROR":
         st.markdown("<p class='status-error'>❌ Processing failed</p>", unsafe_allow_html=True)
     else:
         st.info("No active processing")
+
+    # Keep the regular reset button for all states
+    if st.session_state.processing_status in ["PROCESSING", "ERROR", "COMPLETE"]:
+        reset_button = st.button("Reset Status")
+        if reset_button:
+            st.session_state.processing_status = None
+            st.session_state.is_processing = False
+            st.session_state.processing_log = []
+            st.rerun()
 
     # Processing log
     st.subheader("Processing Log")
@@ -432,11 +602,13 @@ def render_status_page():
     # PDF counts
     pdf_count = len(list(PDFS_DIR.glob("*.pdf")))
     processed_count = len(list((PROCESSED_DIR / "docs").glob("*.txt"))) if (PROCESSED_DIR / "docs").exists() else 0
+    md_count = len(list((PROCESSED_DIR / "docs").glob("*/*.md"))) if (PROCESSED_DIR / "docs").exists() else 0
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     col1.metric("PDF Files", pdf_count)
     col2.metric("Processed Files", processed_count)
-    col3.metric("Processing Rate", f"{round(processed_count/max(1, pdf_count)*100)}%")
+    col3.metric("Markdown Files", md_count)
+    col4.metric("Processing Rate", f"{round(processed_count/max(1, pdf_count)*100)}%")
 
     # Directory status
     st.subheader("Directory Status")
@@ -451,10 +623,21 @@ def render_status_page():
     for name, path in dirs.items():
         exists = path.exists()
         size = sum(f.stat().st_size for f in path.glob('**/*') if f.is_file()) / (1024*1024) if exists else 0
+
+        # Count specific file types
+        if exists and name == "Processed Directory":
+            txt_files = len(list(path.glob('**/*.txt')))
+            json_files = len(list(path.glob('**/*.json')))
+            md_files = len(list(path.glob('**/*.md')))
+            file_counts = f"TXT: {txt_files}, JSON: {json_files}, MD: {md_files}"
+        else:
+            file_counts = ""
+
         dir_data.append({
             "Directory": name,
             "Status": "✅ Exists" if exists else "❌ Missing",
-            "Size (MB)": round(size, 2)
+            "Size (MB)": round(size, 2),
+            "Files": file_counts
         })
 
     st.dataframe(pd.DataFrame(dir_data), use_container_width=True)
@@ -463,42 +646,57 @@ def render_status_page():
     st.divider()
     refresh_button = st.button("Refresh Status")
     if refresh_button:
-        st.experimental_rerun()
+        st.rerun()
 
 # Main app layout
 def main():
     # Check the global message queue for updates
     check_message_queue()
 
-    st.title("IBM Redbooks RAG System")
-    st.write("A comprehensive Retrieval-Augmented Generation system for IBM Redbooks documentation")
+    # Additional check to reset stale processing state
+    if st.session_state.processing_status == "PROCESSING" and not st.session_state.is_processing:
+        elapsed_time = time.time() - st.session_state.last_check_time
+        if elapsed_time > 10:  # If more than 10 seconds have passed
+            st.session_state.processing_status = None
+            st.session_state.processing_log.append("⚠️ Processing state was stale - automatically reset")
+            st.session_state.last_check_time = time.time()
+
+    st.title("DocRAG")
+    st.write("A comprehensive tool for processing PDF documents and generating RAG knowledge bases")
+
+    # Simple tab system that doesn't rely on tracking active tabs
+    tab_names = ["Upload & Process", "Search", "Collections", "Status"]
+    tab1, tab2, tab3, tab4 = st.tabs(tab_names)
+
+    # Display Upload tab
+    with tab1:
+        render_upload_page()
+
+    # Display Search tab
+    with tab2:
+        render_search_page()
+
+    # Display Collections tab
+    with tab3:
+        render_collections_page()
+
+    # Display Status tab
+    with tab4:
+        render_status_page()
 
     # If processing is active, periodically check for updates
-    if st.session_state.processing_status == "PROCESSING":
+    if st.session_state.is_processing:
         current_time = time.time()
         if current_time - st.session_state.last_check_time > 1.0:
             st.session_state.last_check_time = current_time
-            st.experimental_rerun()
+            st.rerun()
 
-    # Create tabs for each section
-    tab1, tab2, tab3, tab4 = st.tabs(["Upload & Process", "Search", "Collections", "Status"])
-
-    # Display content in selected tab
-    with tab1:
-        if st.session_state.current_page == "Upload & Process" or tab1.active:
-            render_upload_page()
-
-    with tab2:
-        if st.session_state.current_page == "Search" or tab2.active:
-            render_search_page()
-
-    with tab3:
-        if st.session_state.current_page == "Collections" or tab3.active:
-            render_collections_page()
-
-    with tab4:
-        if st.session_state.current_page == "Status" or tab4.active:
-            render_status_page()
+        # Check for stalled processing (longer than 5 minutes)
+        if current_time - st.session_state.last_check_time > 300:  # 5 minutes
+            st.session_state.processing_status = "ERROR"
+            st.session_state.is_processing = False
+            st.session_state.processing_log.append("❌ Processing appears to be stalled and has been terminated.")
+            st.rerun()
 
 # Run the app
 if __name__ == "__main__":

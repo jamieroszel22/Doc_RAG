@@ -1,29 +1,32 @@
 #!/bin/bash
 
-# Run the Streamlit app for IBM Redbooks RAG
+# DocRAG - Streamlit App Launcher
+# This script starts the Streamlit app for DocRAG
 
-echo "Starting IBM Redbooks RAG Streamlit App..."
+echo "Starting DocRAG Streamlit App..."
 
-# Check if Python is available
-if command -v python3 &> /dev/null; then
-    PYTHON_CMD="python3"
-else
-    echo "Python 3 not found. Please install Python 3 and try again."
-    exit 1
-fi
-
-# Kill any existing Streamlit processes
+# Stop any existing Streamlit processes
 echo "Stopping any existing Streamlit processes..."
-pkill -f "streamlit run app.py" 2>/dev/null || true
-sleep 2
+pkill -f "streamlit run app.py" || true
 
-# Check if Streamlit is installed
-$PYTHON_CMD -c "import streamlit" 2>/dev/null
-if [ $? -ne 0 ]; then
-    echo "Streamlit not found. Installing required packages..."
-    $PYTHON_CMD -m pip install -r requirements.txt
+# Wait a moment for processes to terminate
+sleep 1
+
+# Start the Streamlit app
+echo "Starting Streamlit app at http://localhost:8501"
+
+# Set the Streamlit server port
+export STREAMLIT_SERVER_PORT=8501
+
+# Check if Python 3 is available
+PYTHON_CMD="python3"
+if ! command -v $PYTHON_CMD &> /dev/null; then
+    PYTHON_CMD="python"
+    if ! command -v $PYTHON_CMD &> /dev/null; then
+        echo "Error: Python is not installed or not in PATH"
+        exit 1
+    fi
 fi
 
-# Run the app
-echo "Starting Streamlit app at http://localhost:8501"
-streamlit run app.py
+# Run the Streamlit app
+$PYTHON_CMD -m streamlit run app.py

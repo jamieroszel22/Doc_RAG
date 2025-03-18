@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Super Simple Processor - The absolute simplest approach that's guaranteed to work
+DocRAG - Simple PDF Processor
+A straightforward PDF processing script for generating text, JSON, and markdown from documents
 """
 import os
 import sys
@@ -31,12 +32,32 @@ def get_processed_info(name, chunks_dir, docs_dir, ollama_dir):
             chunks = json.load(f)
             info['chunks_count'] = len(chunks)
 
-    # Check text file
-    text_file = docs_dir / f"{name}.txt"
-    if text_file.exists():
-        info['text_size_mb'] = round(text_file.stat().st_size / (1024 * 1024), 2)
-        with open(text_file, 'r') as f:
-            info['text_lines'] = sum(1 for _ in f)
+    # Check individual document directory
+    doc_dir = docs_dir / name
+    if doc_dir.exists():
+        # Check text file
+        text_file = doc_dir / f"{name}.txt"
+        if text_file.exists():
+            info['text_size_mb'] = round(text_file.stat().st_size / (1024 * 1024), 2)
+            with open(text_file, 'r') as f:
+                info['text_lines'] = sum(1 for _ in f)
+
+        # Check JSON file
+        json_file = doc_dir / f"{name}.json"
+        if json_file.exists():
+            info['json_size_mb'] = round(json_file.stat().st_size / (1024 * 1024), 2)
+
+        # Check Markdown file
+        md_file = doc_dir / f"{name}.md"
+        if md_file.exists():
+            info['md_size_mb'] = round(md_file.stat().st_size / (1024 * 1024), 2)
+    else:
+        # Check old text file structure for backward compatibility
+        text_file = docs_dir / f"{name}.txt"
+        if text_file.exists():
+            info['text_size_mb'] = round(text_file.stat().st_size / (1024 * 1024), 2)
+            with open(text_file, 'r') as f:
+                info['text_lines'] = sum(1 for _ in f)
 
     # Check Ollama file
     ollama_file = ollama_dir / f"{name}_ollama.jsonl"
@@ -50,14 +71,14 @@ def is_pdf_processed(pdf_name, chunks_dir):
     chunk_file = chunks_dir / f"{pdf_name}_chunks.json"
     return chunk_file.exists()
 
-def prepare_openwebui_collection(chunks_dir, output_dir, collection_name="IBM Z Knowledge Base"):
+def prepare_openwebui_collection(chunks_dir, output_dir, collection_name="Document Knowledge Base"):
     """Prepare chunks for Open WebUI collection"""
     print("\nPreparing Open WebUI collection...")
 
     # Create OpenWebUI directory
     openwebui_dir = output_dir / "openwebui"
     openwebui_dir.mkdir(parents=True, exist_ok=True)
-    output_file = openwebui_dir / "ibm_knowledge_collection.json"
+    output_file = openwebui_dir / "knowledge_collection.json"
 
     # Load all chunks
     all_chunks = []
@@ -146,6 +167,50 @@ You can now use this collection in your RAG workflows in Open WebUI.
 
     print(f"Import instructions saved to {instructions_file}")
 
+def generate_markdown(text, title, page_count, pdf_filename, processed_date):
+    """Generate a nicely formatted markdown version of the document"""
+    # Create a header with metadata
+    markdown = f"""# {title}
+
+**Source**: {pdf_filename}
+**Pages**: {page_count}
+**Processed**: {processed_date}
+
+---
+
+"""
+
+    # Process the text to create a more readable markdown version
+    # Split text into paragraphs
+    paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
+
+    # Heuristic to identify potential headings
+    for paragraph in paragraphs:
+        # Check if paragraph looks like a heading (short, ends with colon, all caps, etc.)
+        lines = paragraph.split('\n')
+        if len(lines) == 1 and len(paragraph) < 100:
+            if paragraph.isupper() or paragraph.endswith(':') or paragraph.endswith('.'):
+                # Likely a heading
+                if len(paragraph) < 50:  # Short heading
+                    markdown += f"## {paragraph}\n\n"
+                else:  # Longer heading/subheading
+                    markdown += f"### {paragraph}\n\n"
+            else:
+                # Regular paragraph
+                markdown += f"{paragraph}\n\n"
+        else:
+            # Multi-line paragraph, check if it's a list
+            if any(line.strip().startswith(('•', '-', '*', '1.', '2.')) for line in lines):
+                # Format as a list
+                for line in lines:
+                    markdown += f"{line}\n"
+                markdown += "\n"
+            else:
+                # Regular multi-line paragraph
+                markdown += f"{' '.join(lines)}\n\n"
+
+    return markdown
+
 def process_pdfs(force_reprocess=False, skip_openwebui=False):
     """Process PDFs using a very simple approach"""
     # Install PyPDF2 if needed
@@ -158,7 +223,7 @@ def process_pdfs(force_reprocess=False, skip_openwebui=False):
 
     # Paths
     pdfs_dir = Path("/Users/jamieroszel/Desktop/Docling RAG/pdfs")
-    output_dir = Path("/Users/jamieroszel/Desktop/Docling RAG/processed_redbooks")
+    output_dir = Path("/Users/jamieroszel/Desktop/Docling RAG/processed_docs")  # Changed from processed_redbooks
     docs_dir = output_dir / "docs"
     chunks_dir = output_dir / "chunks"
     ollama_dir = output_dir / "ollama"
@@ -178,11 +243,15 @@ def process_pdfs(force_reprocess=False, skip_openwebui=False):
     # Process each PDF
     for pdf_file in pdf_files:
         file_info = {'name': pdf_file.name, **get_file_info(pdf_file)}
+        name = pdf_file.stem
 
-        if not force_reprocess and is_pdf_processed(pdf_file.stem, chunks_dir):
+        # Create individual document directory
+        doc_dir = docs_dir / name
+
+        if not force_reprocess and is_pdf_processed(name, chunks_dir):
             print(f"Skipping {pdf_file.name} - already processed")
             file_info['status'] = 'skipped'
-            file_info.update(get_processed_info(pdf_file.stem, chunks_dir, docs_dir, ollama_dir))
+            file_info.update(get_processed_info(name, chunks_dir, docs_dir, ollama_dir))
             skipped_count += 1
         else:
             try:
@@ -196,10 +265,24 @@ def process_pdfs(force_reprocess=False, skip_openwebui=False):
                 for page in reader.pages:
                     text += page.extract_text() + "\n\n"
 
-                # Save full text
-                name = pdf_file.stem
-                with open(docs_dir / f"{name}.txt", "w", encoding="utf-8") as f:
+                # Create document directory if it doesn't exist
+                doc_dir.mkdir(parents=True, exist_ok=True)
+
+                # Save full text in document folder
+                with open(doc_dir / f"{name}.txt", "w", encoding="utf-8") as f:
                     f.write(text)
+
+                # Generate and save markdown version
+                processed_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                markdown_content = generate_markdown(
+                    text,
+                    name,
+                    len(reader.pages),
+                    pdf_file.name,
+                    processed_date
+                )
+                with open(doc_dir / f"{name}.md", "w", encoding="utf-8") as f:
+                    f.write(markdown_content)
 
                 # Create basic chunks (500 chars each with 50 char overlap)
                 chunks = []
@@ -223,12 +306,24 @@ def process_pdfs(force_reprocess=False, skip_openwebui=False):
                 with open(chunks_dir / f"{name}_chunks.json", "w", encoding="utf-8") as f:
                     json.dump(chunks, f, indent=2)
 
+                # Save JSON in document folder
+                with open(doc_dir / f"{name}.json", "w", encoding="utf-8") as f:
+                    json.dump({
+                        "title": name,
+                        "source": pdf_file.name,
+                        "pages": len(reader.pages),
+                        "processed_date": processed_date,
+                        "chunks_count": len(chunks),
+                        "full_text": text
+                    }, f, indent=2)
+
                 # Save for Ollama
                 with open(ollama_dir / f"{name}_ollama.jsonl", "w", encoding="utf-8") as f:
                     for chunk in chunks:
                         f.write(json.dumps(chunk) + "\n")
 
                 print(f"Successfully processed {pdf_file.name}")
+                print(f"Files saved in folder: {doc_dir}")
                 file_info['status'] = 'processed'
                 file_info.update(get_processed_info(name, chunks_dir, docs_dir, ollama_dir))
                 processed_count += 1
@@ -261,6 +356,10 @@ def process_pdfs(force_reprocess=False, skip_openwebui=False):
             print(f"Chunks generated: {file_info['chunks_count']}")
         if 'text_size_mb' in file_info:
             print(f"Extracted text size: {file_info['text_size_mb']} MB")
+        if 'json_size_mb' in file_info:
+            print(f"JSON file size: {file_info['json_size_mb']} MB")
+        if 'md_size_mb' in file_info:
+            print(f"Markdown file size: {file_info['md_size_mb']} MB")
         if 'text_lines' in file_info:
             print(f"Text lines: {file_info['text_lines']}")
         if 'ollama_size_mb' in file_info:
