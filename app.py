@@ -16,6 +16,7 @@ import tempfile
 import shutil
 import sys
 import threading
+import queue
 from datetime import datetime
 
 # Initialize paths
@@ -26,17 +27,23 @@ CHUNKS_DIR = PROCESSED_DIR / 'chunks'
 OPENWEBUI_DIR = PROCESSED_DIR / 'openwebui'
 SCRIPTS_DIR = BASE_DIR / 'scripts'
 
-# Initialize session state variables
+# Make sure directories exist
+PDFS_DIR.mkdir(exist_ok=True)
+PROCESSED_DIR.mkdir(exist_ok=True)
+
+# Create a queue for thread-safe communication
+if 'process_queue' not in st.session_state:
+    st.session_state.process_queue = queue.Queue()
+
+# Initialize session state variables - always initialize at the beginning
 if 'processing_status' not in st.session_state:
     st.session_state.processing_status = None
 if 'processing_log' not in st.session_state:
     st.session_state.processing_log = []
 if 'search_results' not in st.session_state:
     st.session_state.search_results = None
-
-# Make sure directories exist
-PDFS_DIR.mkdir(exist_ok=True)
-PROCESSED_DIR.mkdir(exist_ok=True)
+if 'thread_running' not in st.session_state:
+    st.session_state.thread_running = False
 
 # Custom CSS for better appearance
 st.markdown("""
@@ -77,11 +84,18 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Function to add log messages from the thread to the queue
+def add_log_message(message):
+    if st.session_state.process_queue is not None:
+        st.session_state.process_queue.put(message)
+
 # Helper function to run super_simple.py in a thread
 def process_pdfs(force=False, skip_openwebui=False):
     """Run the PDF processing script in a background thread"""
+    # Update the status first
     st.session_state.processing_status = "PROCESSING"
     st.session_state.processing_log = []
+    st.session_state.thread_running = True
 
     def run_process():
         try:
@@ -102,31 +116,53 @@ def process_pdfs(force=False, skip_openwebui=False):
             # Capture output line by line
             for line in iter(process.stdout.readline, ''):
                 if line.strip():
-                    st.session_state.processing_log.append(line.strip())
+                    add_log_message(line.strip())
 
             # Check for any errors
             for line in iter(process.stderr.readline, ''):
                 if line.strip():
-                    st.session_state.processing_log.append(f"ERROR: {line.strip()}")
+                    add_log_message(f"ERROR: {line.strip()}")
 
             process.stdout.close()
             process.stderr.close()
             return_code = process.wait()
 
             if return_code == 0:
-                st.session_state.processing_status = "COMPLETE"
-                st.session_state.processing_log.append("✅ Processing completed successfully!")
+                add_log_message("✅ Processing completed successfully!")
+                add_log_message("STATUS:COMPLETE")
             else:
-                st.session_state.processing_status = "ERROR"
-                st.session_state.processing_log.append(f"❌ Processing failed with code {return_code}")
+                add_log_message(f"❌ Processing failed with code {return_code}")
+                add_log_message("STATUS:ERROR")
 
         except Exception as e:
-            st.session_state.processing_status = "ERROR"
-            st.session_state.processing_log.append(f"❌ Error: {str(e)}")
+            add_log_message(f"❌ Error: {str(e)}")
+            add_log_message("STATUS:ERROR")
+
+        # Mark thread as complete
+        add_log_message("THREAD:COMPLETE")
 
     # Start processing thread
     thread = threading.Thread(target=run_process)
+    thread.daemon = True
     thread.start()
+
+# Helper function to check queue and update session state
+def check_process_queue():
+    # Check for any messages in the queue
+    if hasattr(st.session_state, 'process_queue'):
+        q = st.session_state.process_queue
+        while not q.empty():
+            message = q.get()
+
+            # Check for special status messages
+            if message.startswith("STATUS:"):
+                st.session_state.processing_status = message[7:]
+            elif message.startswith("THREAD:"):
+                if message == "THREAD:COMPLETE":
+                    st.session_state.thread_running = False
+            else:
+                # Regular log message
+                st.session_state.processing_log.append(message)
 
 # Helper function to run simple search
 def run_simple_search(query):
@@ -168,6 +204,9 @@ def run_simple_search(query):
 
 # Main app layout
 def main():
+    # Check process queue for updates
+    check_process_queue()
+
     st.title("IBM Redbooks RAG System")
     st.write("A comprehensive Retrieval-Augmented Generation system for IBM Redbooks documentation")
 
@@ -249,10 +288,14 @@ def render_upload_page():
             skip_openwebui = st.checkbox("Skip Open WebUI collection",
                                         help="Don't prepare Open WebUI collection")
 
-        process_button = st.button("Process PDFs", type="primary")
+        process_button = st.button("Process PDFs", type="primary", disabled=st.session_state.thread_running)
         if process_button:
             process_pdfs(force=force_reprocess, skip_openwebui=skip_openwebui)
             st.info("⏳ Processing started. Check the Status page for progress.")
+            # Add a delay to ensure the thread starts
+            time.sleep(1)
+            # Redirect to status page
+            st.switch_page("app.py/Status")
     else:
         st.info("No PDFs found. Please upload PDFs first.")
 
@@ -348,10 +391,14 @@ def render_collections_page():
 
             # Update collection button
             st.divider()
-            update_button = st.button("Update Collection", type="primary")
+            update_button = st.button("Update Collection", type="primary", disabled=st.session_state.thread_running)
             if update_button:
                 process_pdfs(force=False, skip_openwebui=False)
                 st.info("⏳ Collection update started. Check the Status page for progress.")
+                # Add a delay to ensure the thread starts
+                time.sleep(1)
+                # Navigate to the status page
+                st.switch_page("app.py/Status")
 
         except Exception as e:
             st.error(f"Error loading collection: {str(e)}")
@@ -382,6 +429,12 @@ def render_status_page():
         st.markdown("</div>", unsafe_allow_html=True)
     else:
         st.text("No log entries")
+
+    # Auto-refresh if processing is happening
+    if st.session_state.thread_running:
+        st.empty()
+        time.sleep(1)
+        st.rerun()
 
     # System information
     st.divider()
@@ -421,7 +474,7 @@ def render_status_page():
     st.divider()
     refresh_button = st.button("Refresh Status")
     if refresh_button:
-        st.experimental_rerun()
+        st.rerun()
 
 # Run the app
 if __name__ == "__main__":

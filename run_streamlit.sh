@@ -12,6 +12,11 @@ else
     exit 1
 fi
 
+# Kill any existing Streamlit processes
+echo "Stopping any existing Streamlit processes..."
+pkill -f "streamlit run app.py" 2>/dev/null || true
+sleep 2
+
 # Check if Streamlit is installed
 $PYTHON_CMD -c "import streamlit" 2>/dev/null
 if [ $? -ne 0 ]; then
@@ -20,4 +25,5 @@ if [ $? -ne 0 ]; then
 fi
 
 # Run the app
+echo "Starting Streamlit app at http://localhost:8501"
 streamlit run app.py
