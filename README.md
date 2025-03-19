@@ -6,7 +6,7 @@
 
 DocRAG is a comprehensive document processing system with RAG (Retrieval-Augmented Generation) capabilities. It allows you to upload PDF documents, extract text, create structured representations, and use them with LLM systems via a user-friendly interface.
 
-![DocRAG Screenshot](docs/screenshot.png)
+![DocRAG Screenshot](docs/doc_rag.png)
 
 ## Features
 
