@@ -293,6 +293,42 @@ def render_upload_page():
     # Current PDFs section
     st.subheader("2. Current PDFs")
 
+    # Add refresh button for the Current PDFs section
+    refresh_button = st.button("🔄 Refresh PDF List")
+
+    # Status indicator and summary metrics
+    col1, col2, col3, col4 = st.columns(4)
+    pdf_count = len(list(PDFS_DIR.glob("*.pdf")))
+    processed_count = len(list((PROCESSED_DIR / "docs").glob("*.txt"))) if (PROCESSED_DIR / "docs").exists() else 0
+    md_count = len(list((PROCESSED_DIR / "docs").glob("*/*.md"))) if (PROCESSED_DIR / "docs").exists() else 0
+
+    col1.metric("PDF Files", pdf_count)
+    col2.metric("Processed Files", processed_count)
+    col3.metric("Markdown Files", md_count)
+    col4.metric("Processing Rate", f"{round(processed_count/max(1, pdf_count)*100)}%" if pdf_count > 0 else "0%")
+
+    # Processing status
+    if st.session_state.processing_status == "PROCESSING":
+        st.markdown("<p class='status-processing'>⏳ Processing in progress...</p>", unsafe_allow_html=True)
+        st.progress(0.5)  # Indeterminate progress
+
+        # Add reset button for stuck processing
+        reset_col1, reset_col2 = st.columns([1, 3])
+        with reset_col1:
+            reset_button = st.button("⚠️ Reset Status (If Stuck)")
+            if reset_button:
+                st.session_state.processing_status = None
+                st.session_state.is_processing = False
+                st.session_state.processing_log = []
+                st.rerun()
+        with reset_col2:
+            st.info("If processing is stuck (no progress for >30 seconds), you can reset the status.")
+    elif st.session_state.processing_status == "COMPLETE":
+        st.markdown("<p class='status-success'>✅ Processing complete</p>", unsafe_allow_html=True)
+    elif st.session_state.processing_status == "ERROR":
+        st.markdown("<p class='status-error'>❌ Processing failed</p>", unsafe_allow_html=True)
+
+    # Show PDF list
     pdfs = list(PDFS_DIR.glob("*.pdf"))
     if pdfs:
         pdf_data = []
@@ -341,7 +377,21 @@ def render_upload_page():
         process_button = st.button("Process PDFs", type="primary", disabled=is_processing)
         if process_button:
             process_pdfs_in_thread(force=force_reprocess, skip_openwebui=skip_openwebui)
-            st.info("⏳ Processing started. Please check the Status tab for progress.")
+            st.info("⏳ Processing started. Check the processing log below for progress.")
+
+        # Processing log
+        if st.session_state.processing_log:
+            st.subheader("Processing Log")
+            st.markdown("<div class='log-container'>", unsafe_allow_html=True)
+            for line in st.session_state.processing_log:
+                st.text(line)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+            # Clear log button
+            clear_log = st.button("Clear Log")
+            if clear_log:
+                st.session_state.processing_log = []
+                st.rerun()
     else:
         st.info("No PDFs found. Please upload PDFs first.")
 
@@ -457,7 +507,7 @@ def render_collections_page():
             update_button = st.button("Update Collection", type="primary", disabled=is_processing)
             if update_button:
                 process_pdfs_in_thread(force=False, skip_openwebui=False)
-                st.info("⏳ Collection update started. Please check the Status tab for progress.")
+                st.info("⏳ Collection update started. Check the Upload & Process tab for progress.")
 
         except Exception as e:
             st.error(f"Error loading collection: {str(e)}")
@@ -555,102 +605,6 @@ def render_collections_page():
     else:
         st.info("No individual document folders found. Process PDFs with the updated script to create them.")
 
-# Status page
-def render_status_page():
-    st.header("Processing Status")
-
-    # Status indicator
-    if st.session_state.processing_status == "PROCESSING":
-        st.markdown("<p class='status-processing'>⏳ Processing in progress...</p>", unsafe_allow_html=True)
-        st.progress(0.5)  # Indeterminate progress
-
-        # Add more prominent reset button directly under the progress bar when processing
-        reset_button = st.button("⚠️ Reset Status (If Stuck)", type="primary")
-        if reset_button:
-            st.session_state.processing_status = None
-            st.session_state.is_processing = False
-            st.session_state.processing_log = []
-            st.rerun()
-        st.info("If the progress bar is stuck and no processing is happening, use the Reset button above.")
-    elif st.session_state.processing_status == "COMPLETE":
-        st.markdown("<p class='status-success'>✅ Processing complete</p>", unsafe_allow_html=True)
-    elif st.session_state.processing_status == "ERROR":
-        st.markdown("<p class='status-error'>❌ Processing failed</p>", unsafe_allow_html=True)
-    else:
-        st.info("No active processing")
-
-    # Keep the regular reset button for all states
-    if st.session_state.processing_status in ["PROCESSING", "ERROR", "COMPLETE"]:
-        reset_button = st.button("Reset Status")
-        if reset_button:
-            st.session_state.processing_status = None
-            st.session_state.is_processing = False
-            st.session_state.processing_log = []
-            st.rerun()
-
-    # Processing log
-    st.subheader("Processing Log")
-    if st.session_state.processing_log:
-        st.markdown("<div class='log-container'>", unsafe_allow_html=True)
-        for line in st.session_state.processing_log:
-            st.text(line)
-        st.markdown("</div>", unsafe_allow_html=True)
-    else:
-        st.text("No log entries")
-
-    # System information
-    st.divider()
-    st.subheader("System Information")
-
-    # PDF counts
-    pdf_count = len(list(PDFS_DIR.glob("*.pdf")))
-    processed_count = len(list((PROCESSED_DIR / "docs").glob("*.txt"))) if (PROCESSED_DIR / "docs").exists() else 0
-    md_count = len(list((PROCESSED_DIR / "docs").glob("*/*.md"))) if (PROCESSED_DIR / "docs").exists() else 0
-
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("PDF Files", pdf_count)
-    col2.metric("Processed Files", processed_count)
-    col3.metric("Markdown Files", md_count)
-    col4.metric("Processing Rate", f"{round(processed_count/max(1, pdf_count)*100)}%")
-
-    # Directory status
-    st.subheader("Directory Status")
-    dirs = {
-        "PDFs Directory": PDFS_DIR,
-        "Processed Directory": PROCESSED_DIR,
-        "Chunks Directory": CHUNKS_DIR,
-        "Open WebUI Directory": OPENWEBUI_DIR
-    }
-
-    dir_data = []
-    for name, path in dirs.items():
-        exists = path.exists()
-        size = sum(f.stat().st_size for f in path.glob('**/*') if f.is_file()) / (1024*1024) if exists else 0
-
-        # Count specific file types
-        if exists and name == "Processed Directory":
-            txt_files = len(list(path.glob('**/*.txt')))
-            json_files = len(list(path.glob('**/*.json')))
-            md_files = len(list(path.glob('**/*.md')))
-            file_counts = f"TXT: {txt_files}, JSON: {json_files}, MD: {md_files}"
-        else:
-            file_counts = ""
-
-        dir_data.append({
-            "Directory": name,
-            "Status": "✅ Exists" if exists else "❌ Missing",
-            "Size (MB)": round(size, 2),
-            "Files": file_counts
-        })
-
-    st.dataframe(pd.DataFrame(dir_data), use_container_width=True)
-
-    # Actions
-    st.divider()
-    refresh_button = st.button("Refresh Status")
-    if refresh_button:
-        st.rerun()
-
 # Main app layout
 def main():
     # Check the global message queue for updates
@@ -668,8 +622,8 @@ def main():
     st.write("A comprehensive tool for processing PDF documents and generating RAG knowledge bases")
 
     # Simple tab system that doesn't rely on tracking active tabs
-    tab_names = ["Upload & Process", "Search", "Collections", "Status"]
-    tab1, tab2, tab3, tab4 = st.tabs(tab_names)
+    tab_names = ["Upload & Process", "Search", "Collections"]
+    tab1, tab2, tab3 = st.tabs(tab_names)
 
     # Display Upload tab
     with tab1:
@@ -682,10 +636,6 @@ def main():
     # Display Collections tab
     with tab3:
         render_collections_page()
-
-    # Display Status tab
-    with tab4:
-        render_status_page()
 
     # If processing is active, periodically check for updates
     if st.session_state.is_processing:
