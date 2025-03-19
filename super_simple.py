@@ -28,7 +28,7 @@ def get_processed_info(name, chunks_dir, docs_dir, ollama_dir):
     # Check chunks file
     chunks_file = chunks_dir / f"{name}_chunks.json"
     if chunks_file.exists():
-        with open(chunks_file, 'r') as f:
+        with open(chunks_file, 'r', encoding="utf-8") as f:
             chunks = json.load(f)
             info['chunks_count'] = len(chunks)
 
@@ -39,7 +39,7 @@ def get_processed_info(name, chunks_dir, docs_dir, ollama_dir):
         text_file = doc_dir / f"{name}.txt"
         if text_file.exists():
             info['text_size_mb'] = round(text_file.stat().st_size / (1024 * 1024), 2)
-            with open(text_file, 'r') as f:
+            with open(text_file, 'r', encoding="utf-8") as f:
                 info['text_lines'] = sum(1 for _ in f)
 
         # Check JSON file
@@ -56,7 +56,7 @@ def get_processed_info(name, chunks_dir, docs_dir, ollama_dir):
         text_file = docs_dir / f"{name}.txt"
         if text_file.exists():
             info['text_size_mb'] = round(text_file.stat().st_size / (1024 * 1024), 2)
-            with open(text_file, 'r') as f:
+            with open(text_file, 'r', encoding="utf-8") as f:
                 info['text_lines'] = sum(1 for _ in f)
 
     # Check Ollama file

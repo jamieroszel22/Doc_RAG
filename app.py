@@ -620,7 +620,7 @@ def render_collections_page():
                         break
 
                 if selected_md_path and selected_md_path.exists():
-                    with open(selected_md_path, "r") as f:
+                    with open(selected_md_path, "r", encoding="utf-8") as f:
                         md_content = f.read()
 
                     # Display the markdown content

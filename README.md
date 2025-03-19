@@ -115,6 +115,7 @@ If you're installing on Windows:
 - **Python Version**: Make sure you have Python 3.8+ installed (`python --version` or `python3 --version`)
 - **Streamlit Port**: Default port is 8501. If it's in use, edit `run_streamlit.sh` to change `STREAMLIT_SERVER_PORT`
 - **Windows Command Line**: Windows does not support Unix/Linux commands like `chmod`. Use batch files (.bat) instead of shell scripts, or run Python commands directly.
+- **Encoding Issues on Windows**: If you encounter a `UnicodeDecodeError` when running the app on Windows, ensure the latest version of the code is being used which includes UTF-8 encoding fixes for all file operations.
 
 ## Architecture
 

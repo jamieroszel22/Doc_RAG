@@ -171,6 +171,7 @@ This allows you to:
    - Use the provided batch files (.bat) or run Python commands directly
    - Use Windows path separators (backslashes) when specifying directories
    - If using PowerShell, some commands may differ from Command Prompt
+   - If you encounter `UnicodeDecodeError` messages, make sure you're using the latest version which includes fixes for UTF-8 encoding issues
 
 ## 7. Getting Help
 
