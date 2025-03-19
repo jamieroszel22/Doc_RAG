@@ -35,6 +35,26 @@ No specialized knowledge is required to get started!
    python -c "import streamlit, pandas, plotly, PyPDF2; print('Installation successful!')"
    ```
 
+### Windows-specific Instructions
+
+If you're installing on Windows:
+
+1. Clone and install dependencies as described above
+2. Create a batch file for running the application:
+   ```powershell
+   # Create a batch file for running streamlit
+   echo python -m streamlit run app.py > run_streamlit.bat
+   ```
+3. When creating directories, use Windows path format:
+   ```powershell
+   mkdir pdfs
+   mkdir processed_docs\docs processed_docs\chunks processed_docs\ollama processed_docs\openwebui
+   ```
+4. Run the application using the batch file:
+   ```powershell
+   run_streamlit.bat
+   ```
+
 ## 3. Setting Up Your Documents
 
 1. Create a folder for your PDFs:
@@ -133,17 +153,24 @@ This allows you to:
 1. **Streamlit app won't start**:
    - Make sure Python 3.12+ is installed
    - Check that all dependencies are installed
-   - Verify the script is executable: `chmod +x run_streamlit.sh`
+   - Verify the script is executable: `chmod +x run_streamlit.sh` (macOS/Linux only)
+   - On Windows, try running `python -m streamlit run app.py` directly
 
 2. **PDFs not processing correctly**:
    - Ensure PDFs are text-based (not scanned images)
    - Check file permissions
-   - Look at the Status tab for error messages
+   - Look at the Processing Status & Log for error messages
 
 3. **Search returning no results**:
    - Make sure documents have been processed first
    - Check spelling of search terms
    - Try more general terms
+
+4. **Windows-specific issues**:
+   - Windows does not support shell scripts (.sh files) natively
+   - Use the provided batch files (.bat) or run Python commands directly
+   - Use Windows path separators (backslashes) when specifying directories
+   - If using PowerShell, some commands may differ from Command Prompt
 
 ## 7. Getting Help
 

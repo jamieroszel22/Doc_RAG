@@ -53,6 +53,22 @@ DocRAG is a comprehensive document processing system with RAG (Retrieval-Augment
    # or create .bat files calling the Python scripts directly
    ```
 
+### Windows-specific Installation
+
+If you're installing on Windows:
+
+1. Skip the "Make the shell scripts executable" step
+2. Create a batch file for running streamlit:
+   ```powershell
+   # Create batch file for running the application
+   echo python -m streamlit run app.py > run_streamlit.bat
+   ```
+3. When creating directories, use Windows path format:
+   ```powershell
+   mkdir pdfs
+   mkdir processed_docs\docs processed_docs\chunks processed_docs\ollama processed_docs\openwebui
+   ```
+
 5. Run the application:
    ```bash
    # Linux/macOS
@@ -98,6 +114,7 @@ DocRAG is a comprehensive document processing system with RAG (Retrieval-Augment
 - **Permissions**: If shell scripts don't run, check the execution permissions (`chmod +x *.sh`)
 - **Python Version**: Make sure you have Python 3.8+ installed (`python --version` or `python3 --version`)
 - **Streamlit Port**: Default port is 8501. If it's in use, edit `run_streamlit.sh` to change `STREAMLIT_SERVER_PORT`
+- **Windows Command Line**: Windows does not support Unix/Linux commands like `chmod`. Use batch files (.bat) instead of shell scripts, or run Python commands directly.
 
 ## Architecture
 
