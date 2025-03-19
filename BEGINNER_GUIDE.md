@@ -21,8 +21,8 @@ No specialized knowledge is required to get started!
 ### Steps
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/docrag.git
-   cd docrag
+   git clone https://github.com/jamieroszel22/Doc_RAG.git
+   cd Doc_RAG
    ```
 
 2. Install dependencies:

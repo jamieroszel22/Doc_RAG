@@ -494,7 +494,7 @@ def render_search_page():
         - Import collections from `processed_docs/openwebui/`
 
     - **Ollama RAG**: Local AI-powered question answering
-        - Run `./run_rag_interactive.sh` in terminal
+        - Use Ollama directly with the JSONL files in `processed_docs/ollama/`
         - Uses Ollama for embeddings and generation
     """)
 

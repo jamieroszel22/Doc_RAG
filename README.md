@@ -29,8 +29,8 @@ DocRAG is a comprehensive document processing system with RAG (Retrieval-Augment
 
 1. Clone this repository:
    ```bash
-   git clone https://github.com/jamieroszel22/Redbooks_RAG.git
-   cd Redbooks_RAG
+   git clone https://github.com/jamieroszel22/Doc_RAG.git
+   cd Doc_RAG
    ```
 
 2. Install dependencies:

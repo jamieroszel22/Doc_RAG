@@ -1,7 +1,7 @@
 #!/bin/bash
-# IBM Redbooks RAG Menu
+# DocRAG Menu
 
-echo "IBM Redbooks RAG System"
+echo "DocRAG System"
 echo "1) Process PDFs"
 echo "2) Run simple search"
 echo "3) Run Ollama RAG"
@@ -9,7 +9,7 @@ echo "4) Exit"
 read -p "Choose an option (1-4): " choice
 
 case $choice in
-  1) 
+  1)
     echo "Processing PDFs..."
     python3 super_simple.py
     ;;
@@ -29,7 +29,7 @@ case $choice in
       echo "Ollama RAG script not found."
     fi
     ;;
-  4) 
+  4)
     echo "Exiting..."
     exit 0
     ;;
